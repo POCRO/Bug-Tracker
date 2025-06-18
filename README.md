@@ -38,7 +38,13 @@
 
 ### 安装
 
-从VSCode扩展市场搜索 "Bug Tracker" 并安装。（暂时还未上线）
+1. 从VSCode扩展市场搜索 "Bug Tracker" 并安装。（暂时还未上线）
+2. 从打包好的安装包直接安装
+   仓库总目录下有bug-tracker-0.0.1.vsix安装包，将其所在目录在vscode打开，终端中运行即可安装
+
+```shell
+code --install-extension bug-tracker-0.0.1.vsix
+```
 
 ### 基本使用
 
