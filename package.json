@@ -2,15 +2,15 @@
   "name": "bug-tracker",
   "displayName": "Bug Tracker",
   "description": "快速记录和管理代码中的Bug",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.74.0"
   },
   "repository": {
   "type": "git",
-  "url": "https://github.com/POCRO/Bug-Tracker.git"
-    },
-
+  "icon": "icon.png",  
+  "url": "https://github.com/POCRO/Bug-Tracker"
+},
   "categories": ["Other"],
   "activationEvents": [],
   "main": "./out/extension.js",
@@ -18,7 +18,7 @@
     "commands": [
       {
         "command": "bugtracker.test",
-        "title": "测试Bug追踪器"
+        "title": "测试Bug Tracker"
       },
       {
         "command": "bugtracker.addBug",
@@ -118,7 +118,7 @@
       "explorer": [
         {
           "id": "bugTrackerView",
-          "name": "Bug追踪器"
+          "name": "Bug Tracker"
         }
       ]
     },

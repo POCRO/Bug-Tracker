@@ -102,10 +102,12 @@ code --install-extension bug-tracker-0.0.1.vsix
 
 显示所有Bug的概览，包含文件位置、严重程度、状态和时间信息。
 ![20250618134822](https://raw.githubusercontent.com/POCRO/myPic/main/pics20250618134822.png)
+
 ### 代码中的Bug标记
 
 在代码编辑器中直接显示Bug位置，红色背景标记配合🐛图标。
 ![20250618134835](https://raw.githubusercontent.com/POCRO/myPic/main/pics20250618134835.png)
+
 ### Markdown报告
 
 自动生成的详细报告，包含统计信息和完整的Bug记录。
@@ -127,18 +129,19 @@ code --install-extension bug-tracker-0.0.1.vsix
 
 ## 📄 许可证
 
-本项目基于MIT许可证开源。详见 [LICENSE](LICENSE) 文件。
+本项目基于MIT许可证开源。
 
 ## 🐞 问题反馈
 
 如果遇到问题或有功能建议，请通过以下方式联系：
 
-- 邮箱：your.email@example.com
-- 或者在使用过程中通过插件反馈
+- 在使用过程中通过插件反馈
 
 ## 👨‍💻 作者
 
 **Porcovvsky** - *初始开发*
+
+
 
 ---
 
