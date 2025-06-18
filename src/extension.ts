@@ -13,15 +13,19 @@ interface Bug {
     createdAt: Date;
     updatedAt: Date;
     code: string; // 保存出错的代码行
+    solution?: string; // 解决方案
+    isStandalone?: boolean; // 是否为独立Bug记录（不依赖代码位置）
 }
 
 class BugManager {
     private bugs: Bug[] = [];
     private storageUri: vscode.Uri;
     private decorationType: vscode.TextEditorDecorationType;
+    private markdownUri: vscode.Uri;
 
     constructor(context: vscode.ExtensionContext) {
         this.storageUri = vscode.Uri.joinPath(context.globalStorageUri, 'bugs.json');
+        this.markdownUri = this.initMarkdownUri();
         this.decorationType = vscode.window.createTextEditorDecorationType({
             backgroundColor: 'rgba(255, 0, 0, 0.2)',
             border: '1px solid red',
@@ -40,7 +44,16 @@ class BugManager {
         });
     }
 
-    async addBug(file: string, line: number, column: number, description: string, severity: Bug['severity']): Promise<void> {
+    private initMarkdownUri(): vscode.Uri {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (workspaceFolder) {
+            return vscode.Uri.joinPath(workspaceFolder.uri, 'BUG_TRACKER.md');
+        }
+        // 如果没有工作区，使用全局存储位置
+        return vscode.Uri.joinPath(vscode.Uri.parse(vscode.env.appRoot), 'BUG_TRACKER.md');
+    }
+
+    public async addBug(file: string, line: number, column: number, description: string, severity: Bug['severity'], solution?: string, isStandalone: boolean = false): Promise<void> {
         const bug: Bug = {
             id: Date.now().toString(),
             file,
@@ -51,38 +64,213 @@ class BugManager {
             status: 'open',
             createdAt: new Date(),
             updatedAt: new Date(),
-            code: await this.getLineCode(file, line)
+            code: isStandalone ? '' : await this.getLineCode(file, line),
+            solution,
+            isStandalone
         };
 
         this.bugs.push(bug);
         await this.saveBugs();
+        await this.exportToMarkdown();
         this.updateDecorations();
         bugTreeProvider.refresh();
     }
 
-    async removeBug(bugId: string): Promise<void> {
+    public async removeBug(bugId: string): Promise<void> {
         this.bugs = this.bugs.filter(bug => bug.id !== bugId);
         await this.saveBugs();
+        await this.exportToMarkdown();
         this.updateDecorations();
         bugTreeProvider.refresh();
     }
 
-    async updateBugStatus(bugId: string, status: Bug['status']): Promise<void> {
+    public async updateBugStatus(bugId: string, status: Bug['status']): Promise<void> {
         const bug = this.bugs.find(b => b.id === bugId);
         if (bug) {
             bug.status = status;
             bug.updatedAt = new Date();
             await this.saveBugs();
+            await this.exportToMarkdown();
             bugTreeProvider.refresh();
         }
     }
 
-    getBugs(): Bug[] {
+    public async updateBugSolution(bugId: string, solution: string): Promise<void> {
+        const bug = this.bugs.find(b => b.id === bugId);
+        if (bug) {
+            bug.solution = solution;
+            bug.updatedAt = new Date();
+            await this.saveBugs();
+            await this.exportToMarkdown();
+            bugTreeProvider.refresh();
+        }
+    }
+
+    public getBugs(): Bug[] {
         return this.bugs;
     }
 
-    getBugsForFile(file: string): Bug[] {
+    public getBugsForFile(file: string): Bug[] {
         return this.bugs.filter(bug => bug.file === file);
+    }
+
+    public async importFromMarkdown(): Promise<void> {
+        try {
+            const data = await vscode.workspace.fs.readFile(this.markdownUri);
+            const content = data.toString();
+            const importedBugs = this.parseMarkdownToBugs(content);
+            
+            // 合并导入的Bug，避免重复
+            for (const importedBug of importedBugs) {
+                const exists = this.bugs.find(b => b.id === importedBug.id);
+                if (!exists) {
+                    this.bugs.push(importedBug);
+                }
+            }
+            
+            await this.saveBugs();
+            this.updateDecorations();
+            bugTreeProvider.refresh();
+        } catch (error) {
+            console.log('Markdown文件不存在或无法读取，跳过导入');
+        }
+    }
+
+    public async exportMarkdownReport(): Promise<void> {
+        await this.exportToMarkdown();
+    }
+
+    public getMarkdownUri(): vscode.Uri {
+        return this.markdownUri;
+    }
+
+    public refreshDecorations(): void {
+        this.updateDecorations();
+    }
+
+    private parseMarkdownToBugs(content: string): Bug[] {
+        const bugs: Bug[] = [];
+        const bugRegex = /## Bug #(\d+)\s*\n((?:(?!## Bug #)[\s\S])*)/g;
+        let match;
+
+        while ((match = bugRegex.exec(content)) !== null) {
+            const [, id, bugContent] = match;
+            
+            const descMatch = bugContent.match(/\*\*描述\*\*: (.+)/);
+            const severityMatch = bugContent.match(/\*\*严重程度\*\*: (.+)/);
+            const statusMatch = bugContent.match(/\*\*状态\*\*: (.+)/);
+            const fileMatch = bugContent.match(/\*\*文件\*\*: (.+)/);
+            const lineMatch = bugContent.match(/\*\*行号\*\*: (\d+)/);
+            const createdMatch = bugContent.match(/\*\*创建时间\*\*: (.+)/);
+            const updatedMatch = bugContent.match(/\*\*更新时间\*\*: (.+)/);
+            const solutionMatch = bugContent.match(/\*\*解决方案\*\*:\s*\n((?:(?!\*\*)[\s\S])*)/);
+            const codeMatch = bugContent.match(/```[\s\S]*?\n(.*)\n```/);
+
+            if (descMatch && severityMatch && statusMatch) {
+                const bug: Bug = {
+                    id,
+                    description: descMatch[1].trim(),
+                    severity: severityMatch[1].trim() as Bug['severity'],
+                    status: statusMatch[1].trim() as Bug['status'],
+                    file: fileMatch ? fileMatch[1].trim() : '',
+                    line: lineMatch ? parseInt(lineMatch[1]) : 0,
+                    column: 0,
+                    createdAt: createdMatch ? new Date(createdMatch[1].trim()) : new Date(),
+                    updatedAt: updatedMatch ? new Date(updatedMatch[1].trim()) : new Date(),
+                    code: codeMatch ? codeMatch[1].trim() : '',
+                    solution: solutionMatch ? solutionMatch[1].trim() : '',
+                    isStandalone: !fileMatch || fileMatch[1].trim() === ''
+                };
+                bugs.push(bug);
+            }
+        }
+
+        return bugs;
+    }
+
+    private async exportToMarkdown(): Promise<void> {
+        const content = this.generateMarkdownContent();
+        try {
+            await vscode.workspace.fs.writeFile(this.markdownUri, Buffer.from(content, 'utf8'));
+        } catch (error) {
+            console.error('导出Markdown失败:', error);
+        }
+    }
+
+    private generateMarkdownContent(): string {
+        const sortedBugs = this.bugs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        
+        let content = `# Bug Tracker报告\n\n`;
+        content += `> 生成时间: ${new Date().toLocaleString('zh-CN')}\n\n`;
+        
+        // 统计信息
+        const statusCount = {
+            open: this.bugs.filter(b => b.status === 'open').length,
+            'in-progress': this.bugs.filter(b => b.status === 'in-progress').length,
+            resolved: this.bugs.filter(b => b.status === 'resolved').length,
+            closed: this.bugs.filter(b => b.status === 'closed').length
+        };
+        
+        content += `## 📊 统计概览\n\n`;
+        content += `- 🔴 待处理: ${statusCount.open}\n`;
+        content += `- 🟡 进行中: ${statusCount['in-progress']}\n`;
+        content += `- 🟢 已解决: ${statusCount.resolved}\n`;
+        content += `- ⚪ 已关闭: ${statusCount.closed}\n`;
+        content += `- 📝 总计: ${this.bugs.length}\n\n`;
+        
+        content += `---\n\n`;
+        
+        // Bug详情
+        for (const bug of sortedBugs) {
+            content += `## Bug #${bug.id}\n\n`;
+            content += `**描述**: ${bug.description}\n\n`;
+            content += `**严重程度**: ${this.getSeverityEmoji(bug.severity)} ${bug.severity}\n\n`;
+            content += `**状态**: ${this.getStatusEmoji(bug.status)} ${bug.status}\n\n`;
+            
+            if (!bug.isStandalone && bug.file) {
+                content += `**文件**: ${bug.file}\n\n`;
+                content += `**行号**: ${bug.line + 1}\n\n`;
+                
+                if (bug.code) {
+                    content += `**代码片段**:\n\`\`\`\n${bug.code}\n\`\`\`\n\n`;
+                }
+            } else {
+                content += `**类型**: 独立Bug记录\n\n`;
+            }
+            
+            content += `**创建时间**: ${bug.createdAt.toLocaleString('zh-CN')}\n\n`;
+            content += `**更新时间**: ${bug.updatedAt.toLocaleString('zh-CN')}\n\n`;
+            
+            if (bug.solution) {
+                content += `**解决方案**:\n${bug.solution}\n\n`;
+            } else {
+                content += `**解决方案**: 待补充\n\n`;
+            }
+            
+            content += `---\n\n`;
+        }
+        
+        return content;
+    }
+
+    private getSeverityEmoji(severity: Bug['severity']): string {
+        switch (severity) {
+            case 'critical': return '🔴';
+            case 'high': return '🟠';
+            case 'medium': return '🟡';
+            case 'low': return '🟢';
+            default: return '⚪';
+        }
+    }
+
+    private getStatusEmoji(status: Bug['status']): string {
+        switch (status) {
+            case 'open': return '🔴';
+            case 'in-progress': return '🟡';
+            case 'resolved': return '🟢';
+            case 'closed': return '⚪';
+            default: return '⚪';
+        }
     }
 
     private async getLineCode(file: string, line: number): Promise<string> {
@@ -177,10 +365,6 @@ class BugManager {
             });
         }
     }
-
-    public refreshDecorations(): void {
-        this.updateDecorations();
-    }
 }
 
 class BugTreeItem extends vscode.TreeItem {
@@ -194,8 +378,10 @@ class BugTreeItem extends vscode.TreeItem {
         const statusIcon = this.getStatusIcon(bug.status);
         const timeAgo = this.getTimeAgo(bug.createdAt);
         
-        this.tooltip = `文件: ${path.basename(bug.file)}\n行: ${bug.line + 1}\n严重程度: ${bug.severity}\n状态: ${bug.status}\n描述: ${bug.description}\n代码: ${bug.code}\n创建时间: ${this.formatDate(bug.createdAt)}\n更新时间: ${this.formatDate(bug.updatedAt)}`;
-        this.description = `${path.basename(bug.file)}:${bug.line + 1} [${bug.severity}] [${bug.status}] ${timeAgo}`;
+        this.tooltip = `文件: ${bug.isStandalone ? '独立记录' : path.basename(bug.file)}\n行: ${bug.isStandalone ? 'N/A' : bug.line + 1}\n严重程度: ${bug.severity}\n状态: ${bug.status}\n描述: ${bug.description}\n代码: ${bug.code || 'N/A'}\n解决方案: ${bug.solution || '待补充'}\n创建时间: ${this.formatDate(bug.createdAt)}\n更新时间: ${this.formatDate(bug.updatedAt)}`;
+        this.description = bug.isStandalone 
+            ? `[独立记录] [${bug.severity}] [${bug.status}] ${timeAgo}`
+            : `${path.basename(bug.file)}:${bug.line + 1} [${bug.severity}] [${bug.status}] ${timeAgo}`;
         this.contextValue = 'bug';
         this.iconPath = new vscode.ThemeIcon(severityIcon);
         
@@ -330,6 +516,12 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage(`Bug Tracker插件激活失败: ${error}`);
     }
 
+    // 测试命令
+    const testCommand = vscode.commands.registerCommand('bugtracker.test', () => {
+        vscode.window.showInformationMessage('Bug Tracker插件正在工作！');
+        console.log('测试命令执行成功');
+    });
+
     // 添加Bug命令
     const addBugCommand = vscode.commands.registerCommand('bugtracker.addBug', async () => {
         console.log('addBug命令被触发');
@@ -380,6 +572,23 @@ export function activate(context: vscode.ExtensionContext) {
         try {
             await bugManager.addBug(file, position.line, position.character, description, severity.value);
             
+            // 询问是否添加解决方案
+            const addSolution = await vscode.window.showQuickPick(['是', '否'], {
+                placeHolder: '是否现在添加解决方案？'
+            });
+            
+            if (addSolution === '是') {
+                const solution = await vscode.window.showInputBox({
+                    prompt: '请输入解决方案或备注',
+                    placeHolder: '例如: 在第45行添加null检查...'
+                });
+                
+                if (solution) {
+                    const lastBug = bugManager.getBugs()[bugManager.getBugs().length - 1];
+                    await bugManager.updateBugSolution(lastBug.id, solution);
+                }
+            }
+            
             // 调试信息
             console.log('Bug已添加，当前总数:', bugManager.getBugs().length);
             console.log('所有Bug:', JSON.stringify(bugManager.getBugs(), null, 2));
@@ -393,8 +602,102 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    // 添加独立Bug记录命令
+    const addStandaloneBugCommand = vscode.commands.registerCommand('bugtracker.addStandaloneBug', async () => {
+        console.log('添加独立Bug记录命令被触发');
+        
+        // 获取Bug描述
+        const description = await vscode.window.showInputBox({
+            prompt: '请输入Bug描述',
+            placeHolder: '例如: 用户登录模块存在安全漏洞'
+        });
+        
+        if (!description) {
+            return;
+        }
+
+        // 选择严重程度
+        const severity = await vscode.window.showQuickPick([
+            { label: '🔴 Critical', value: 'critical' as const },
+            { label: '🟠 High', value: 'high' as const },
+            { label: '🟡 Medium', value: 'medium' as const },
+            { label: '🟢 Low', value: 'low' as const }
+        ], {
+            placeHolder: '选择Bug严重程度'
+        });
+
+        if (!severity) {
+            return;
+        }
+
+        // 获取解决方案（可选）
+        const solution = await vscode.window.showInputBox({
+            prompt: '请输入解决方案（可选）',
+            placeHolder: '例如: 实施双因子认证，加强密码策略...'
+        });
+
+        try {
+            await bugManager.addBug('', 0, 0, description, severity.value, solution, true);
+            vscode.window.showInformationMessage(`独立Bug记录已添加: ${description}`);
+        } catch (error) {
+            console.error('添加独立Bug时出错:', error);
+            vscode.window.showErrorMessage(`添加独立Bug失败: ${error}`);
+        }
+    });
+
+    // 导出Bug报告命令
+    const exportMarkdownCommand = vscode.commands.registerCommand('bugtracker.exportMarkdown', async () => {
+        try {
+            await bugManager.exportMarkdownReport();
+            vscode.window.showInformationMessage('Bug报告已导出到 BUG_TRACKER.md');
+            
+            // 询问是否打开文件
+            const openFile = await vscode.window.showQuickPick(['是', '否'], {
+                placeHolder: '是否打开导出的Markdown文件？'
+            });
+            
+            if (openFile === '是') {
+                const markdownUri = bugManager.getMarkdownUri();
+                const document = await vscode.workspace.openTextDocument(markdownUri);
+                await vscode.window.showTextDocument(document);
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(`导出失败: ${error}`);
+        }
+    });
+
+    // 从Markdown导入Bug记录命令
+    const importMarkdownCommand = vscode.commands.registerCommand('bugtracker.importMarkdown', async () => {
+        try {
+            await bugManager.importFromMarkdown();
+            vscode.window.showInformationMessage('已从 BUG_TRACKER.md 导入Bug记录');
+        } catch (error) {
+            vscode.window.showErrorMessage(`导入失败: ${error}`);
+        }
+    });
+
+    // 更新Bug解决方案命令
+    const updateSolutionCommand = vscode.commands.registerCommand('bugtracker.updateSolution', async (item: BugTreeItem) => {
+        const currentSolution = item.bug.solution || '';
+        const solution = await vscode.window.showInputBox({
+            prompt: '请输入或更新解决方案',
+            value: currentSolution,
+            placeHolder: '例如: 在第45行添加null检查...'
+        });
+
+        if (solution !== undefined) {
+            await bugManager.updateBugSolution(item.bug.id, solution);
+            vscode.window.showInformationMessage('解决方案已更新');
+        }
+    });
+
     // 跳转到Bug位置命令
     const jumpToBugCommand = vscode.commands.registerCommand('bugtracker.jumpToBug', async (bug: Bug) => {
+        if (bug.isStandalone || !bug.file) {
+            vscode.window.showInformationMessage(`这是一个独立Bug记录: ${bug.description}`);
+            return;
+        }
+        
         try {
             const document = await vscode.workspace.openTextDocument(bug.file);
             const editor = await vscode.window.showTextDocument(document);
@@ -436,12 +739,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    // 测试命令
-    const testCommand = vscode.commands.registerCommand('bugtracker.test', () => {
-        vscode.window.showInformationMessage('Bug追踪器插件正在工作！');
-        console.log('测试命令执行成功');
-    });
-
     // 显示Bug列表命令
     const showBugListCommand = vscode.commands.registerCommand('bugtracker.showBugList', () => {
         vscode.commands.executeCommand('bugTrackerView.focus');
@@ -455,6 +752,10 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         testCommand,
         addBugCommand,
+        addStandaloneBugCommand,
+        exportMarkdownCommand,
+        importMarkdownCommand,
+        updateSolutionCommand,
         jumpToBugCommand,
         removeBugCommand,
         updateBugStatusCommand,

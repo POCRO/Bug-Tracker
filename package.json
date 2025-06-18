@@ -21,6 +21,26 @@
         "icon": "$(bug)"
       },
       {
+        "command": "bugtracker.addStandaloneBug",
+        "title": "添加独立Bug记录",
+        "icon": "$(add)"
+      },
+      {
+        "command": "bugtracker.exportMarkdown",
+        "title": "导出Bug报告到Markdown",
+        "icon": "$(export)"
+      },
+      {
+        "command": "bugtracker.importMarkdown",
+        "title": "从Markdown导入Bug记录",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "bugtracker.updateSolution",
+        "title": "更新解决方案",
+        "icon": "$(note)"
+      },
+      {
         "command": "bugtracker.showBugList",
         "title": "显示Bug列表",
         "icon": "$(list-unordered)"
@@ -51,26 +71,41 @@
       ],
       "view/title": [
         {
-          "command": "bugtracker.showBugList",
+          "command": "bugtracker.addStandaloneBug",
           "when": "view == bugTrackerView",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "bugtracker.exportMarkdown",
+          "when": "view == bugTrackerView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "bugtracker.importMarkdown",
+          "when": "view == bugTrackerView",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
         {
           "command": "bugtracker.jumpToBug",
           "when": "view == bugTrackerView && viewItem == bug",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "bugtracker.updateSolution",
+          "when": "view == bugTrackerView && viewItem == bug",
+          "group": "inline@2"
         },
         {
           "command": "bugtracker.updateBugStatus",
           "when": "view == bugTrackerView && viewItem == bug",
-          "group": "inline"
+          "group": "inline@3"
         },
         {
           "command": "bugtracker.removeBug",
           "when": "view == bugTrackerView && viewItem == bug",
-          "group": "inline"
+          "group": "inline@4"
         }
       ]
     },
