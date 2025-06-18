@@ -1,0 +1,104 @@
+{
+  "name": "bug-tracker",
+  "displayName": "Bug Tracker",
+  "description": "快速记录和管理代码中的Bug",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bugtracker.test",
+        "title": "测试Bug追踪器"
+      },
+      {
+        "command": "bugtracker.addBug",
+        "title": "添加Bug记录",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "bugtracker.showBugList",
+        "title": "显示Bug列表",
+        "icon": "$(list-unordered)"
+      },
+      {
+        "command": "bugtracker.removeBug",
+        "title": "删除Bug",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bugtracker.updateBugStatus",
+        "title": "更新Bug状态",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "bugtracker.jumpToBug",
+        "title": "跳转到Bug位置",
+        "icon": "$(go-to-file)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "bugtracker.addBug",
+          "group": "bugtracker",
+          "when": "editorTextFocus"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "bugtracker.showBugList",
+          "when": "view == bugTrackerView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "bugtracker.jumpToBug",
+          "when": "view == bugTrackerView && viewItem == bug",
+          "group": "inline"
+        },
+        {
+          "command": "bugtracker.updateBugStatus",
+          "when": "view == bugTrackerView && viewItem == bug",
+          "group": "inline"
+        },
+        {
+          "command": "bugtracker.removeBug",
+          "when": "view == bugTrackerView && viewItem == bug",
+          "group": "inline"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "bugTrackerView",
+          "name": "Bug追踪器"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "bugtracker.addBug",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  }
+}
