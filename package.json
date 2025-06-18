@@ -2,10 +2,11 @@
   "name": "bug-tracker",
   "displayName": "Bug Tracker",
   "description": "快速记录和管理代码中的Bug",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "engines": {
     "vscode": "^1.74.0"
   },
+  "publisher": "Porcovsky",
   "repository": {
   "type": "git",
   "icon": "icon.png",  
