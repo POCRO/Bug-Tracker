@@ -6,6 +6,11 @@
   "engines": {
     "vscode": "^1.74.0"
   },
+  "repository": {
+  "type": "git",
+  "url": "https://github.com/POCRO/Bug-Tracker.git"
+    },
+
   "categories": ["Other"],
   "activationEvents": [],
   "main": "./out/extension.js",
