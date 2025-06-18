@@ -107,11 +107,50 @@ class BugManager {
         }
         const currentFile = activeEditor.document.uri.fsPath;
         const fileBugs = this.getBugsForFile(currentFile);
-        const decorations = fileBugs.map(bug => ({
-            range: new vscode.Range(bug.line, bug.column, bug.line, bug.column + 1),
-            hoverMessage: `🐛 ${bug.description}\n严重程度: ${bug.severity}\n状态: ${bug.status}`
-        }));
+        const decorations = fileBugs.map(bug => {
+            const timeAgo = this.getTimeAgo(bug.createdAt);
+            const hoverMessage = `🐛 ${bug.description}\n严重程度: ${bug.severity}\n状态: ${bug.status}\n创建时间: ${this.formatDate(bug.createdAt)}\n更新时间: ${this.formatDate(bug.updatedAt)}`;
+            return {
+                range: new vscode.Range(bug.line, bug.column, bug.line, bug.column + 1),
+                hoverMessage: hoverMessage
+            };
+        });
         activeEditor.setDecorations(this.decorationType, decorations);
+    }
+    formatDate(date) {
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+    getTimeAgo(date) {
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffMinutes < 1) {
+            return '刚刚';
+        }
+        else if (diffMinutes < 60) {
+            return `${diffMinutes}分钟前`;
+        }
+        else if (diffHours < 24) {
+            return `${diffHours}小时前`;
+        }
+        else if (diffDays < 7) {
+            return `${diffDays}天前`;
+        }
+        else {
+            return date.toLocaleDateString('zh-CN', {
+                month: 'short',
+                day: 'numeric'
+            });
+        }
     }
     refreshDecorations() {
         this.updateDecorations();
@@ -124,8 +163,9 @@ class BugTreeItem extends vscode.TreeItem {
         this.collapsibleState = collapsibleState;
         const severityIcon = this.getSeverityIcon(bug.severity);
         const statusIcon = this.getStatusIcon(bug.status);
-        this.tooltip = `文件: ${path.basename(bug.file)}\n行: ${bug.line + 1}\n严重程度: ${bug.severity}\n状态: ${bug.status}\n描述: ${bug.description}\n代码: ${bug.code}`;
-        this.description = `${path.basename(bug.file)}:${bug.line + 1} [${bug.severity}] [${bug.status}]`;
+        const timeAgo = this.getTimeAgo(bug.createdAt);
+        this.tooltip = `文件: ${path.basename(bug.file)}\n行: ${bug.line + 1}\n严重程度: ${bug.severity}\n状态: ${bug.status}\n描述: ${bug.description}\n代码: ${bug.code}\n创建时间: ${this.formatDate(bug.createdAt)}\n更新时间: ${this.formatDate(bug.updatedAt)}`;
+        this.description = `${path.basename(bug.file)}:${bug.line + 1} [${bug.severity}] [${bug.status}] ${timeAgo}`;
         this.contextValue = 'bug';
         this.iconPath = new vscode.ThemeIcon(severityIcon);
         this.command = {
@@ -152,15 +192,59 @@ class BugTreeItem extends vscode.TreeItem {
             default: return 'bug';
         }
     }
+    formatDate(date) {
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+    getTimeAgo(date) {
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffMinutes < 1) {
+            return '刚刚';
+        }
+        else if (diffMinutes < 60) {
+            return `${diffMinutes}分钟前`;
+        }
+        else if (diffHours < 24) {
+            return `${diffHours}小时前`;
+        }
+        else if (diffDays < 7) {
+            return `${diffDays}天前`;
+        }
+        else {
+            return date.toLocaleDateString('zh-CN', {
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+    }
 }
 class BugTreeProvider {
     constructor(bugManager) {
         this.bugManager = bugManager;
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        // 每分钟刷新一次时间显示
+        this.refreshTimer = setInterval(() => {
+            this.refresh();
+        }, 60000); // 60秒
     }
     refresh() {
         this._onDidChangeTreeData.fire();
+    }
+    dispose() {
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+        }
     }
     getTreeItem(element) {
         return element;
@@ -173,7 +257,9 @@ class BugTreeProvider {
                 // 返回一个提示项
                 return Promise.resolve([]);
             }
-            return Promise.resolve(bugs.map(bug => new BugTreeItem(bug, vscode.TreeItemCollapsibleState.None)));
+            // 按创建时间倒序排列（最新的在前面）
+            const sortedBugs = bugs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+            return Promise.resolve(sortedBugs.map(bug => new BugTreeItem(bug, vscode.TreeItemCollapsibleState.None)));
         }
         return Promise.resolve([]);
     }
@@ -181,17 +267,23 @@ class BugTreeProvider {
 let bugManager;
 let bugTreeProvider;
 function activate(context) {
-    console.log('Bug Tracker插件开始激活');
-    vscode.window.showInformationMessage('Bug Tracker插件已激活！');
-    bugManager = new BugManager(context);
-    bugTreeProvider = new BugTreeProvider(bugManager);
-    // 注册树视图
-    const treeView = vscode.window.createTreeView('bugTrackerView', {
-        treeDataProvider: bugTreeProvider,
-        showCollapseAll: true
-    });
-    context.subscriptions.push(treeView);
-    console.log('Bug Tracker插件激活完成');
+    try {
+        console.log('Bug Tracker插件开始激活');
+        vscode.window.showInformationMessage('Bug Tracker插件已激活！');
+        bugManager = new BugManager(context);
+        bugTreeProvider = new BugTreeProvider(bugManager);
+        // 注册树视图
+        const treeView = vscode.window.createTreeView('bugTrackerView', {
+            treeDataProvider: bugTreeProvider,
+            showCollapseAll: true
+        });
+        context.subscriptions.push(treeView);
+        console.log('Bug Tracker插件激活完成');
+    }
+    catch (error) {
+        console.error('插件激活失败:', error);
+        vscode.window.showErrorMessage(`Bug Tracker插件激活失败: ${error}`);
+    }
     // 添加Bug命令
     const addBugCommand = vscode.commands.registerCommand('bugtracker.addBug', async () => {
         console.log('addBug命令被触发');
@@ -278,6 +370,11 @@ function activate(context) {
             vscode.window.showInformationMessage(`Bug状态已更新为: ${status.label}`);
         }
     });
+    // 测试命令
+    const testCommand = vscode.commands.registerCommand('bugtracker.test', () => {
+        vscode.window.showInformationMessage('Bug追踪器插件正在工作！');
+        console.log('测试命令执行成功');
+    });
     // 显示Bug列表命令
     const showBugListCommand = vscode.commands.registerCommand('bugtracker.showBugList', () => {
         vscode.commands.executeCommand('bugTrackerView.focus');
@@ -286,7 +383,8 @@ function activate(context) {
     const onDidChangeActiveTextEditor = vscode.window.onDidChangeActiveTextEditor(() => {
         bugManager.refreshDecorations();
     });
-    context.subscriptions.push(addBugCommand, jumpToBugCommand, removeBugCommand, updateBugStatusCommand, showBugListCommand, onDidChangeActiveTextEditor);
+    context.subscriptions.push(testCommand, addBugCommand, jumpToBugCommand, removeBugCommand, updateBugStatusCommand, showBugListCommand, onDidChangeActiveTextEditor, bugTreeProvider // 确保定时器在插件停用时被清理
+    );
 }
 exports.activate = activate;
 function deactivate() { }
